@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Trip Gallery{% endblock %}
+{% block content %}
+<h1>Existing Trips</h1>
+{% for trip, files in trips.items() %}
+<article class="trip-item">
+    <h2>{{ trip }}</h2>
+    <div class="trip-files">
+        {% for file in files %}
+            <div class="file-item">
+                <a href="/trips/{{ trip }}/{{ file }}" target="_blank" class="file-link">{{ file }}</a>
+                <button class="btn btn-sm btn-danger" onclick="deleteFile('{{ trip }}', '{{ file }}')">Delete</button>
+            </div>
+        {% endfor %}
+    </div>
+
+    <!-- Add more files form -->
+    <form method="POST" enctype="multipart/form-data" action="/trips/{{ trip }}/add-files">
+        <input type="file" name="new_files" multiple accept=".pdf,.png,.jpg,.jpeg">
+        <button class="btn btn-sm btn-secondary" type="submit">Add Files</button>
+    </form>
+
+    <div class="form-group">
+        <button class="btn btn-primary" onclick="generateReimbursement('{{ trip }}')">Generate Report</button>
+        <button class="btn btn-warning" onclick="deleteReport('{{ trip }}')">Delete Report</button>
+        <button class="btn btn-danger" onclick="deleteTrip('{{ trip }}')">Delete Trip</button>
+        <a href="/trips/{{ trip }}/report" class="btn btn-secondary">Show Report</a>
+    </div>
+</article>
+{% endfor %}
+
+<script>
+    function deleteFile(trip, filename) {
+        if (!confirm(`Delete file "${filename}" from trip "${trip}"?`)) return;
+        fetch(`/api/delete-file/${trip}/${filename}`, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            location.reload();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Failed to delete file.');
+        });
+    }
+
+    function generateReimbursement(tripName) {
+        fetch(`/api/generate-reimbursement/${tripName}`, { method: 'POST' })
+        .then(response => response.json())
+        .then(data => { alert(data.message); })
+        .catch(error => { alert('Error generating reimbursement CSV.'); });
+    }
+
+    function deleteTrip(tripName) {
+        if (!confirm(`Are you sure you want to delete the trip "${tripName}"?`)) return;
+        fetch(`/api/delete-trip/${tripName}`, { method: 'DELETE' })
+        .then(res => res.json())
+        .then(data => { alert(data.message); location.reload(); })
+        .catch(err => { alert("Failed to delete trip."); console.error(err); });
+    }
+
+    function deleteReport(tripName) {
+        if (!confirm(`Delete the reimbursement report for "${tripName}"?`)) return;
+        fetch(`/api/delete-report/${tripName}`, { method: 'DELETE' })
+        .then(res => res.json())
+        .then(data => { alert(data.message); })
+        .catch(err => { alert("Failed to delete report."); console.error(err); });
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+{% block title %}Report - {{ trip_name }}{% endblock %}
+{% block content %}
+<h2>Reimbursement Report for {{ trip_name }}</h2>
+
+<style>
+    .table-wrapper {
+        overflow-x: auto;
+        max-width: 100%;
+        margin-bottom: 30px;
+    }
+
+    .category-title {
+        margin-top: 30px;
+        margin-bottom: 15px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #7e57c2;
+        color: #333;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0 12px;
+        table-layout: fixed;
+    }
+
+    th, td {
+        padding: 12px;
+        border: 1px solid #ddd;
+        background: #fff;
+        word-wrap: break-word;
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+
+    th {
+        background: #f0f0f0;
+        text-align: left;
+    }
+
+    tr {
+        border-radius: 8px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    }
+
+    .view-button {
+        background-color: #7e57c2;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: background-color 0.3s ease;
+    }
+
+    .view-button:hover {
+        background-color: #6a42b3;
+    }
+
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(0,0,0,0.6);
+    }
+
+    .modal-content {
+        background-color: #fff;
+        margin: 5% auto;
+        padding: 20px;
+        border-radius: 10px;
+        width: 80%;
+        max-width: 800px;
+        position: relative;
+    }
+
+    .close-button {
+        color: #aaa;
+        position: absolute;
+        top: 10px;
+        right: 20px;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .close-button:hover {
+        color: black;
+    }
+
+    .price-box {
+        margin-top: 20px;
+        padding: 10px;
+        background: #f9f9f9;
+        border-left: 4px solid #7e57c2;
+        font-weight: 500;
+    }
+    
+    .exchange-input {
+    width: 80px;
+    padding: 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-right: 10px;
+}
+.calc-button {
+    background-color: #4caf50;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    margin-bottom: 20px;
+}
+.calc-button:hover {
+    background-color: #449d48;
+}
+.exchange-rate-controls {
+    margin: 20px 0;
+}
+.total-row {
+    font-weight: bold;
+    background-color: #f9f9f9;
+}
+</style>
+
+<div class="exchange-rate-controls">
+    {% set currencies = report | map(attribute='Currency') | unique | list %}
+    {% for currency in currencies if currency != 'USD' %}
+        <label>{{ currency }} to USD: <input type="number" step="any" class="exchange-input" data-currency="{{ currency }}"></label>
+    {% endfor %}
+</div>
+
+<button class="calc-button" onclick="calculateUSD()">Calculate USD</button>
+
+{% set categories = {} %}
+{% for row in report %}
+    {% if row['Category'] not in categories %}
+        {% set _ = categories.update({row['Category']: []}) %}
+    {% endif %}
+    {% set _ = categories[row['Category']].append(row) %}
+{% endfor %}
+
+{% for category, items in categories.items() %}
+    <h3 class="category-title">{{ category }}</h3>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th>Location</th>
+                    <th>Date &amp; Time</th>
+                    <th>Price</th>
+                    <th>Currency</th>
+                    <th>USD Price</th>
+                    <th>File</th>
+                    <th>Preview</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in items %}
+                <tr>
+                    <td>{{ row['Item'] }}</td>
+                    <td>{{ row['Location'] }}</td>
+                    <td>{{ row['Date & time'] }}</td>
+                    <td class="price">{{ row['Price'] }}</td>
+                    <td class="currency">{{ row['Currency'] }}</td>
+                    <td class="usd-price"></td>
+                    <td>{{ row['File name'] }}</td>
+                    <td>
+                        <button class="view-button" onclick="showModal('{{ category }}-{{ loop.index }}')">Verify</button>
+                        <div id="modal-{{ category }}-{{ loop.index }}" class="modal">
+                            <div class="modal-content">
+                                <span class="close-button" onclick="closeModal('{{ category }}-{{ loop.index }}')">&times;</span>
+                                {% if row['File name'].endswith(('.png', '.jpg', '.jpeg')) %}
+                                    <img src="/trips/{{ trip_name }}/{{ row['File name'] }}" style="max-width:100%;">
+                                {% elif row['File name'].endswith('.pdf') %}
+                                    <embed src="/trips/{{ trip_name }}/{{ row['File name'] }}" type="application/pdf" width="100%" height="500px">
+                                {% else %}
+                                    <p><em>Unsupported format</em></p>
+                                {% endif %}
+                                <div class="price-box">
+                                    Extracted Price: {{ row['Price'] }}
+                                </div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                <tr class="total-row">
+                    <td colspan="5">Total USD</td>
+                    <td class="category-total"></td>
+                    <td colspan="2"></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+{% endfor %}
+
+<script>
+function calculateUSD() {
+    const rateInputs = document.querySelectorAll('.exchange-input');
+    const exchangeRates = {};
+    rateInputs.forEach(input => {
+        const currency = input.dataset.currency;
+        const rate = parseFloat(input.value);
+        if (!isNaN(rate)) {
+            exchangeRates[currency.toUpperCase()] = rate;
+        }
+    });
+
+    const tables = document.querySelectorAll('.table-wrapper');
+    tables.forEach(wrapper => {
+        let categoryTotal = 0;
+        const rows = wrapper.querySelectorAll('tbody tr');
+        rows.forEach(row => {
+            const priceCell = row.querySelector('.price');
+            const currencyCell = row.querySelector('.currency');
+            const usdPriceCell = row.querySelector('.usd-price');
+
+            if (!priceCell || !currencyCell || !usdPriceCell) return;
+
+            const price = parseFloat(priceCell.innerText);
+            const currency = currencyCell.innerText.trim().toUpperCase();
+
+            let usdPrice = 0;
+            if (currency === 'USD') {
+                usdPrice = price;
+            } else if (exchangeRates[currency]) {
+                usdPrice = price * exchangeRates[currency];
+            } else {
+                usdPriceCell.innerText = '-';
+                return;
+            }
+
+            usdPriceCell.innerText = usdPrice.toFixed(2);
+            categoryTotal += usdPrice;
+        });
+        const totalCell = wrapper.querySelector('.category-total');
+        if (totalCell) {
+            totalCell.innerText = categoryTotal.toFixed(2);
+        }
+    });
+}
+
+function showModal(index) {
+    document.getElementById('modal-' + index).style.display = 'block';
+}
+function closeModal(index) {
+    document.getElementById('modal-' + index).style.display = 'none';
+}
+window.onclick = function(event) {
+    const modals = document.querySelectorAll('.modal');
+    modals.forEach(modal => {
+        if (event.target === modal) {
+            modal.style.display = "none";
+        }
+    });
+}
+</script>
+{% endblock %}
